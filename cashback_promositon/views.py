@@ -49,7 +49,7 @@ class CashbackTransactionView(APIView):
             return response.Response({"error": "cashback_rule is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Check if customer already has a transaction
-        existing_tx = CashbackTransaction.objects.filter(customer_id=customer_id).first()
+        existing_tx = CashbackTransaction.objects.filter(customer_id=customer_id ,cashback_rule=rule_id).first()
         if existing_tx:
             return response.Response({"error": "Customer transaction already done"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -60,35 +60,41 @@ class CashbackTransactionView(APIView):
         rule_data = CashbackRule.objects.filter(id=rule_id).first()
         if not rule_data:
             return response.Response({"error": "Invalid cashback_rule"}, status=status.HTTP_400_BAD_REQUEST)
-
-        today = date.today()
+        
+        # check rule is active
         is_active = rule_data.status == "active"
+        if not is_active:
+            return response.Response({"error": "rule is not active"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # check date is valid and not expired
+        today = date.today()
         is_within_dates = rule_data.valid_from <= today <= rule_data.valid_to
+        if not is_within_dates:
+            return response.Response({"error": "rule date is expired"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # check amont is valid for cashabck
         is_min_amount = order_amount >= rule_data.min_order_value
+        if not is_min_amount:
+            return response.Response({"error": "amount is not valid for cashback"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if is_active and is_within_dates and is_min_amount:
-            cashback_percentage = float(rule_data.cashback_percentage)
-            calculated_cashback = (cashback_percentage / 100) * order_amount
+       
+        cashback_percentage = float(rule_data.cashback_percentage)
+        calculated_cashback = (cashback_percentage / 100) * order_amount
 
-            payload = {
-                "order_id":order_id,
-                "customer_id": customer_id,
-                "order_amount": order_amount,
-                "cashback_amount": calculated_cashback,
-                "cashback_rule": rule_id,
-            }
+        payload = {
+            "order_id":order_id,
+            "customer_id": customer_id,
+            "order_amount": order_amount,
+            "cashback_amount": calculated_cashback,
+            "cashback_rule": rule_id,
+        }
 
-            serializer = CashbackTransactionSerializer(data=payload)
-            if serializer.is_valid():
-                serializer.save()
-                return response.Response(serializer.data, status=status.HTTP_201_CREATED)
-            else:
-                return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        return response.Response(
-            {"error": "Rule not applicable: inactive, expired, or minimum order not met"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        serializer = CashbackTransactionSerializer(data=payload)
+        if serializer.is_valid():
+            serializer.save()
+            return response.Response(serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def get(self, request):
         transactions = CashbackTransaction.objects.all()
