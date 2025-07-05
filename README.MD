@@ -51,6 +51,7 @@ pip install -r requirements.txt
 ### 4. Apply Migrations
 
 ```bash
+python manage.py flush
 python manage.py migrate
 ```
 
